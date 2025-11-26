@@ -1,0 +1,467 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Neon Snake Game</title>
+    <!-- Load Tailwind CSS for modern, responsive styling -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        /* Custom CSS for the Neon Effect and Game Board */
+        body {
+            background-color: #0d1117; /* Dark background */
+            font-family: 'Inter', sans-serif;
+        }
+        #game-board {
+            box-shadow: 0 0 10px rgba(0, 255, 255, 0.5), 0 0 20px rgba(0, 255, 255, 0.3);
+            background-color: #161b22; /* Slightly lighter dark for the board */
+            border: 2px solid #0ff; /* Neon border */
+            border-radius: 10px;
+        }
+        .snake-segment {
+            background-color: #0ff; /* Neon blue */
+            border-radius: 2px;
+            box-shadow: 0 0 5px #0ff;
+        }
+        .food {
+            background-color: #ff00ff; /* Neon magenta */
+            border-radius: 50%;
+            box-shadow: 0 0 8px #ff00ff;
+        }
+        /* Mobile Controls Styling */
+        .control-button {
+            transition: all 0.1s;
+            box-shadow: 0 4px #00aaff;
+            background-color: #00bfff;
+        }
+        .control-button:active {
+            box-shadow: 0 1px #00aaff;
+            transform: translateY(3px);
+        }
+    </style>
+</head>
+<body class="p-4 flex flex-col items-center justify-center min-h-screen">
+
+    <div class="max-w-md w-full">
+        <!-- Header and Score -->
+        <h1 class="text-4xl font-extrabold text-[#0ff] text-center mb-4 tracking-wider">
+            NEON SNAKE
+        </h1>
+        <div id="status-bar" class="flex justify-between p-3 mb-4 rounded-lg bg-[#161b22] border border-[#0ff] shadow-lg shadow-[#0ff]/20">
+            <span class="text-xl text-white">Score: <span id="score">0</span></span>
+            <span class="text-xl text-white">High Score: <span id="high-score">0</span></span>
+        </div>
+
+        <!-- Game Board Container -->
+        <div id="game-container" class="relative aspect-square w-full">
+            <div id="game-board" class="w-full h-full grid relative">
+                <!-- Game elements will be injected here by JavaScript -->
+            </div>
+            
+            <!-- Start/Game Over Overlay -->
+            <div id="overlay" class="absolute inset-0 bg-black/80 rounded-lg flex flex-col items-center justify-center transition-opacity duration-300">
+                <h2 id="overlay-message" class="text-3xl font-bold text-[#ff00ff] mb-6 text-center">
+                    Welcome to Neon Snake!
+                </h2>
+                <button id="start-button" class="px-6 py-3 text-xl font-bold text-black rounded-lg bg-[#0ff] hover:bg-[#00ffff] transition-colors shadow-xl shadow-[#0ff]/50">
+                    Start Game
+                </button>
+                <p class="text-white mt-4 text-center">Use *Arrow Keys* or *Mobile Buttons* to play.</p>
+            </div>
+        </div>
+
+        <!-- Mobile Controls -->
+        <div id="mobile-controls" class="mt-6 p-4 rounded-xl bg-[#161b22] border border-[#0ff] md:hidden">
+            <div class="flex justify-center">
+                <!-- UP Button -->
+                <button data-direction="up" class="control-button px-6 py-3 rounded-t-lg mx-1 text-white font-bold text-2xl">
+                    &uarr;
+                </button>
+            </div>
+            <div class="flex justify-between my-2">
+                <!-- LEFT Button -->
+                <button data-direction="left" class="control-button px-6 py-3 rounded-l-lg mx-1 text-white font-bold text-2xl">
+                    &larr;
+                </button>
+                <!-- DOWN Button -->
+                <button data-direction="down" class="control-button px-6 py-3 rounded-lg mx-1 text-white font-bold text-2xl">
+                    &darr;
+                </button>
+                <!-- RIGHT Button -->
+                <button data-direction="right" class="control-button px-6 py-3 rounded-r-lg mx-1 text-white font-bold text-2xl">
+                    &rarr;
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // Set up the global variables for Firebase and App ID
+        const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
+        const firebaseConfig = typeof _firebase_config !== 'undefined' ? JSON.parse(_firebase_config) : null;
+        const initialAuthToken = typeof __initial_auth_token !== 'undefined' ? __initial_auth_token : null;
+
+        let db, auth, userId = 'local_user';
+        let highScore = 0;
+        let isAuthReady = false;
+
+        // --- Firebase Imports and Setup ---
+        // Note: Imports are handled via script type="module" tags in a real environment
+        // Here, we define the required functions for simulation and best practice
+
+        const firebaseUtils = {
+            initializeApp: () => {
+                if (!firebaseConfig) {
+                    console.error("Firebase config not found. Running in local mode.");
+                    return { name: 'local_app' };
+                }
+                // Simulate initialization
+                return { name: 'firebase_app' };
+            },
+            getAuth: () => ({ name: 'local_auth' }),
+            getFirestore: () => ({ name: 'local_db' }),
+            signInAnonymously: async (auth) => { console.log("Signed in anonymously (local)."); return { user: { uid: crypto.randomUUID() } }; },
+            signInWithCustomToken: async (auth, token) => { console.log("Signed in with custom token (local)."); return { user: { uid: crypto.randomUUID() } }; },
+            onAuthStateChanged: (auth, callback) => {
+                // Simulate immediate sign-in for local testing
+                if (!firebaseConfig) {
+                    callback({ uid: crypto.randomUUID() });
+                    return () => {}; // Mock unsubscribe
+                }
+                // In a real environment, you would use the actual firebase function here
+                console.warn("Using Firebase Auth functions requires actual imports in production.");
+                callback({ uid: crypto.randomUUID() });
+                return () => {};
+            },
+            // Firestore utils (using placeholder functions)
+            doc: (db, path, docId) => ({ db, path, docId }),
+            setDoc: async (ref, data) => { console.log([Firestore] Setting document at: ${ref.path}/${ref.docId}, data); },
+            onSnapshot: (ref, callback) => {
+                console.log([Firestore] Listening for snapshot at: ${ref.path}/${ref.docId});
+                // Immediately call the callback with mock data for local testing
+                // In a real scenario, this would connect to the database
+                callback({
+                    exists: () => true,
+                    data: () => ({ highScore: localStorage.getItem('snakeHighScore') || 0 }),
+                    // Mock unsubscribe function
+                    unsubscribe: () => { console.log("Mock unsubscribe called."); }
+                });
+                return () => {};
+            },
+            // Utility for fetching the path
+            getPublicDocRef: (db, docId) => ({ db, path: /artifacts/${appId}/public/data/snake_highscores, docId: docId }),
+        };
+
+        // If running in the Canvas environment, use actual Firebase imports
+        if (firebaseConfig) {
+            import('https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js').then(({ initializeApp }) => {
+                import('https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js').then(authModule => {
+                    import('https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js').then(firestoreModule => {
+                        const app = initializeApp(firebaseConfig);
+                        db = firestoreModule.getFirestore(app);
+                        auth = authModule.getAuth(app);
+
+                        // Use actual functions for production
+                        firebaseUtils.signInAnonymously = authModule.signInAnonymously;
+                        firebaseUtils.signInWithCustomToken = authModule.signInWithCustomToken;
+                        firebaseUtils.onAuthStateChanged = authModule.onAuthStateChanged;
+                        
+                        // Use actual firestore functions
+                        firebaseUtils.doc = firestoreModule.doc;
+                        firebaseUtils.setDoc = firestoreModule.setDoc;
+                        firebaseUtils.onSnapshot = firestoreModule.onSnapshot;
+                        firebaseUtils.getPublicDocRef = (db, docId) => firestoreModule.doc(db, /artifacts/${appId}/public/data/snake_highscores/${docId});
+
+                        // Log in and set up listener
+                        setupAuthAndDatabase();
+                    });
+                });
+            });
+        } else {
+            // Setup for local testing immediately
+            setupAuthAndDatabase();
+        }
+
+        async function setupAuthAndDatabase() {
+            try {
+                if (auth) {
+                    if (initialAuthToken) {
+                        await firebaseUtils.signInWithCustomToken(auth, initialAuthToken);
+                    } else {
+                        await firebaseUtils.signInAnonymously(auth);
+                    }
+                }
+            } catch (error) {
+                console.error("Firebase Auth error:", error);
+            }
+
+            firebaseUtils.onAuthStateChanged(auth || firebaseUtils.getAuth(), (user) => {
+                if (user) {
+                    userId = user.uid;
+                    isAuthReady = true;
+                    console.log("Authentication ready. User ID:", userId);
+                    loadHighScore();
+                } else {
+                    // Fallback for anonymous or unauthenticated state
+                    userId = 'local_guest_' + crypto.randomUUID();
+                    isAuthReady = true;
+                    loadHighScore();
+                }
+            });
+        }
+
+        // --- High Score Functions ---
+
+        function loadHighScore() {
+            // Load local fallback first
+            highScore = parseInt(localStorage.getItem('snakeHighScore') || '0', 10);
+            document.getElementById('high-score').textContent = highScore;
+
+            if (db && isAuthReady) {
+                // Listen for the PUBLIC global high score (using a fixed doc ID)
+                const globalHighScoreRef = firebaseUtils.getPublicDocRef(db, 'global');
+
+                const unsubscribe = firebaseUtils.onSnapshot(globalHighScoreRef, (docSnap) => {
+                    if (docSnap.exists() && docSnap.data().highScore !== undefined) {
+                        const globalScore = parseInt(docSnap.data().highScore, 10);
+                        // Always display the highest score (local or global)
+                        if (globalScore > highScore) {
+                             highScore = globalScore;
+                             localStorage.setItem('snakeHighScore', highScore);
+                        }
+                        document.getElementById('high-score').textContent = highScore;
+                    }
+                    // Clean up the listener if the game is somehow stopped (not strictly necessary here, but good practice)
+                    // return () => unsubscribe();
+                }, (error) => {
+                    console.error("Error loading global high score:", error);
+                });
+            }
+        }
+
+        function updateHighScore(newScore) {
+            if (newScore > highScore) {
+                highScore = newScore;
+                document.getElementById('high-score').textContent = highScore;
+                localStorage.setItem('snakeHighScore', highScore);
+
+                if (db && isAuthReady) {
+                    const globalHighScoreRef = firebaseUtils.getPublicDocRef(db, 'global');
+                    
+                    // We need to fetch the existing global score or assume 0
+                    // In a simple model, we just update if local is higher, hoping Firestore rules handle concurrency.
+                    // For simplicity and avoiding complex transactions in this single file, we update if our new score beats the currently displayed high score.
+                    firebaseUtils.setDoc(globalHighScoreRef, { highScore: newScore, userId: userId, lastUpdated: new Date().toISOString() }, { merge: true })
+                        .catch(e => console.error("Error setting high score:", e));
+                }
+            }
+        }
+
+
+        // --- Game Logic Variables ---
+
+        const board = document.getElementById('game-board');
+        const scoreDisplay = document.getElementById('score');
+        const overlay = document.getElementById('overlay');
+        const overlayMessage = document.getElementById('overlay-message');
+        const startButton = document.getElementById('start-button');
+        const mobileControls = document.getElementById('mobile-controls');
+
+        const GRID_SIZE = 20;
+        const CELL_SIZE = 1; // Used for dynamic grid sizing
+
+        let snake = [];
+        let food = {};
+        let direction = { x: 0, y: 0 };
+        let nextDirection = { x: 1, y: 0 }; // Initial movement is right
+        let gameLoopInterval;
+        let gameSpeed = 150; // Initial speed in ms
+        let currentScore = 0;
+
+        // --- Utility Functions ---
+
+        /**
+         * Converts grid coordinates to a unique string key for easy DOM manipulation.
+         * @param {number} x 
+         * @param {number} y 
+         * @returns {string}
+         */
+        const getCellKey = (x, y) => cell-${x}-${y};
+
+        /**
+         * Sets up the initial CSS Grid on the game board element.
+         */
+        function setupGrid() {
+            board.style.gridTemplateColumns = repeat(${GRID_SIZE}, ${CELL_SIZE}fr);
+            board.style.gridTemplateRows = repeat(${GRID_SIZE}, ${CELL_SIZE}fr);
+            board.innerHTML = ''; // Clear existing content
+        }
+
+        /**
+         * Draws an element (snake segment or food) onto the board.
+         * @param {{x: number, y: number}} position 
+         * @param {string} className 
+         */
+        function drawElement(position, className) {
+            const cellElement = document.createElement('div');
+            cellElement.style.gridRowStart = position.y + 1;
+            cellElement.style.gridColumnStart = position.x + 1;
+            cellElement.classList.add(className);
+            cellElement.id = getCellKey(position.x, position.y);
+            board.appendChild(cellElement);
+        }
+
+        /**
+         * Generates a random position within the grid boundaries that is not occupied by the snake.
+         * @returns {{x: number, y: number}}
+         */
+        function getRandomPosition() {
+            let newPosition;
+            do {
+                newPosition = {
+                    x: Math.floor(Math.random() * GRID_SIZE),
+                    y: Math.floor(Math.random() * GRID_SIZE)
+                };
+            } while (snake.some(segment => segment.x === newPosition.x && segment.y === newPosition.y));
+            return newPosition;
+        }
+
+        /**
+         * Places the food item on the board.
+         */
+        function placeFood() {
+            food = getRandomPosition();
+            drawElement(food, 'food');
+        }
+
+        /**
+         * Initializes the game state.
+         */
+        function initGame() {
+            setupGrid();
+            snake = [{ x: 10, y: 10 }];
+            direction = { x: 1, y: 0 };
+            nextDirection = { x: 1, y: 0 };
+            currentScore = 0;
+            gameSpeed = 150;
+
+            scoreDisplay.textContent = currentScore;
+            
+            // Draw the initial snake
+            snake.forEach(segment => drawElement(segment, 'snake-segment'));
+
+            placeFood();
+        }
+
+        /**
+         * The main game loop function.
+         */
+        function gameLoop() {
+            // Apply the direction change stored in nextDirection
+            direction = nextDirection;
+            
+            const head = snake[0];
+            const newHead = { x: head.x + direction.x, y: head.y + direction.y };
+
+            // 1. Check for Game Over
+            if (isGameOver(newHead)) {
+                endGame();
+                return;
+            }
+
+            // Add the new head to the front of the snake
+            snake.unshift(newHead);
+            drawElement(newHead, 'snake-segment');
+
+            // 2. Check for Food Collision
+            if (newHead.x === food.x && newHead.y === food.y) {
+                // Food eaten: grow snake and place new food
+                currentScore += 10;
+                scoreDisplay.textContent = currentScore;
+                
+                // Increase speed for challenge (up to a limit)
+                gameSpeed = Math.max(50, gameSpeed - 3);
+                clearInterval(gameLoopInterval);
+                gameLoopInterval = setInterval(gameLoop, gameSpeed);
+
+                // Remove old food element from DOM
+                const oldFoodElement = document.getElementById(getCellKey(food.x, food.y));
+                if (oldFoodElement) {
+                    oldFoodElement.remove();
+                }
+
+                placeFood();
+            } else {
+                // No food eaten: remove tail
+                const tail = snake.pop();
+                const tailElement = document.getElementById(getCellKey(tail.x, tail.y));
+                if (tailElement) {
+                    tailElement.remove();
+                }
+            }
+        }
+
+        /**
+         * Checks if the game should end based on the snake's new head position.
+         * @param {{x: number, y: number}} newHead 
+         * @returns {boolean}
+         */
+        function isGameOver(newHead) {
+            // Check wall collision
+            if (newHead.x < 0 || newHead.x >= GRID_SIZE || newHead.y < 0 || newHead.y >= GRID_SIZE) {
+                return true;
+            }
+
+            // Check self-collision (starts checking from segment 1, skipping head 0)
+            for (let i = 1; i < snake.length; i++) {
+                if (newHead.x === snake[i].x && newHead.y === snake[i].y) {
+                    return true;
+                }
+            }
+
+            return false;
+        }
+
+        /**
+         * Ends the game and shows the overlay.
+         */
+        function endGame() {
+            clearInterval(gameLoopInterval);
+            updateHighScore(currentScore);
+            overlayMessage.textContent = Game Over! Your Score: ${currentScore};
+            overlay.classList.remove('opacity-0', 'pointer-events-none');
+            startButton.textContent = 'Play Again';
+        }
+
+        /**
+         * Starts or resumes the game.
+         */
+        function startGame() {
+            overlay.classList.add('opacity-0', 'pointer-events-none');
+            initGame();
+            gameLoopInterval = setInterval(gameLoop, gameSpeed);
+        }
+
+        // --- Event Handlers ---
+
+        startButton.addEventListener('click', startGame);
+
+        /**
+         * Handles keyboard input to change the snake's direction.
+         * @param {KeyboardEvent} event 
+         */
+        document.addEventListener('keydown', (event) => {
+            if (overlay.classList.contains('opacity-0')) {
+                 setNextDirection(event.key);
+            } else if (event.key === 'Enter') {
+                startGame();
+            }
+        });
+
+        /**
+         * Handles mobile touch/click input for direction.
+         * @param {MouseEvent} event 
+         */
+        mobileControls.querySelectorAll('.control-button').forEach(button => {
+            button.addEventListener('click', (event) => {
+                if (overlay.classList.c
