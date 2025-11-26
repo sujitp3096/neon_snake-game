@@ -96,164 +96,26 @@
     </div>
 
     <script>
-        // Set up the global variables for Firebase and App ID
-        const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
-        const firebaseConfig = typeof _firebase_config !== 'undefined' ? JSON.parse(_firebase_config) : null;
-        const initialAuthToken = typeof __initial_auth_token !== 'undefined' ? __initial_auth_token : null;
-
-        let db, auth, userId = 'local_user';
+        // --- High Score Logic (using localStorage only) ---
         let highScore = 0;
-        let isAuthReady = false;
 
-        // --- Firebase Imports and Setup ---
-        // Note: Imports are handled via script type="module" tags in a real environment
-        // Here, we define the required functions for simulation and best practice
-
-        const firebaseUtils = {
-            initializeApp: () => {
-                if (!firebaseConfig) {
-                    console.error("Firebase config not found. Running in local mode.");
-                    return { name: 'local_app' };
-                }
-                // Simulate initialization
-                return { name: 'firebase_app' };
-            },
-            getAuth: () => ({ name: 'local_auth' }),
-            getFirestore: () => ({ name: 'local_db' }),
-            signInAnonymously: async (auth) => { console.log("Signed in anonymously (local)."); return { user: { uid: crypto.randomUUID() } }; },
-            signInWithCustomToken: async (auth, token) => { console.log("Signed in with custom token (local)."); return { user: { uid: crypto.randomUUID() } }; },
-            onAuthStateChanged: (auth, callback) => {
-                // Simulate immediate sign-in for local testing
-                if (!firebaseConfig) {
-                    callback({ uid: crypto.randomUUID() });
-                    return () => {}; // Mock unsubscribe
-                }
-                // In a real environment, you would use the actual firebase function here
-                console.warn("Using Firebase Auth functions requires actual imports in production.");
-                callback({ uid: crypto.randomUUID() });
-                return () => {};
-            },
-            // Firestore utils (using placeholder functions)
-            doc: (db, path, docId) => ({ db, path, docId }),
-            setDoc: async (ref, data) => { console.log([Firestore] Setting document at: ${ref.path}/${ref.docId}, data); },
-            onSnapshot: (ref, callback) => {
-                console.log([Firestore] Listening for snapshot at: ${ref.path}/${ref.docId});
-                // Immediately call the callback with mock data for local testing
-                // In a real scenario, this would connect to the database
-                callback({
-                    exists: () => true,
-                    data: () => ({ highScore: localStorage.getItem('snakeHighScore') || 0 }),
-                    // Mock unsubscribe function
-                    unsubscribe: () => { console.log("Mock unsubscribe called."); }
-                });
-                return () => {};
-            },
-            // Utility for fetching the path
-            getPublicDocRef: (db, docId) => ({ db, path: /artifacts/${appId}/public/data/snake_highscores, docId: docId }),
-        };
-
-        // If running in the Canvas environment, use actual Firebase imports
-        if (firebaseConfig) {
-            import('https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js').then(({ initializeApp }) => {
-                import('https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js').then(authModule => {
-                    import('https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js').then(firestoreModule => {
-                        const app = initializeApp(firebaseConfig);
-                        db = firestoreModule.getFirestore(app);
-                        auth = authModule.getAuth(app);
-
-                        // Use actual functions for production
-                        firebaseUtils.signInAnonymously = authModule.signInAnonymously;
-                        firebaseUtils.signInWithCustomToken = authModule.signInWithCustomToken;
-                        firebaseUtils.onAuthStateChanged = authModule.onAuthStateChanged;
-                        
-                        // Use actual firestore functions
-                        firebaseUtils.doc = firestoreModule.doc;
-                        firebaseUtils.setDoc = firestoreModule.setDoc;
-                        firebaseUtils.onSnapshot = firestoreModule.onSnapshot;
-                        firebaseUtils.getPublicDocRef = (db, docId) => firestoreModule.doc(db, /artifacts/${appId}/public/data/snake_highscores/${docId});
-
-                        // Log in and set up listener
-                        setupAuthAndDatabase();
-                    });
-                });
-            });
-        } else {
-            // Setup for local testing immediately
-            setupAuthAndDatabase();
-        }
-
-        async function setupAuthAndDatabase() {
-            try {
-                if (auth) {
-                    if (initialAuthToken) {
-                        await firebaseUtils.signInWithCustomToken(auth, initialAuthToken);
-                    } else {
-                        await firebaseUtils.signInAnonymously(auth);
-                    }
-                }
-            } catch (error) {
-                console.error("Firebase Auth error:", error);
-            }
-
-            firebaseUtils.onAuthStateChanged(auth || firebaseUtils.getAuth(), (user) => {
-                if (user) {
-                    userId = user.uid;
-                    isAuthReady = true;
-                    console.log("Authentication ready. User ID:", userId);
-                    loadHighScore();
-                } else {
-                    // Fallback for anonymous or unauthenticated state
-                    userId = 'local_guest_' + crypto.randomUUID();
-                    isAuthReady = true;
-                    loadHighScore();
-                }
-            });
-        }
-
-        // --- High Score Functions ---
-
+        /**
+         * Loads the high score from the browser's local storage.
+         */
         function loadHighScore() {
-            // Load local fallback first
             highScore = parseInt(localStorage.getItem('snakeHighScore') || '0', 10);
             document.getElementById('high-score').textContent = highScore;
-
-            if (db && isAuthReady) {
-                // Listen for the PUBLIC global high score (using a fixed doc ID)
-                const globalHighScoreRef = firebaseUtils.getPublicDocRef(db, 'global');
-
-                const unsubscribe = firebaseUtils.onSnapshot(globalHighScoreRef, (docSnap) => {
-                    if (docSnap.exists() && docSnap.data().highScore !== undefined) {
-                        const globalScore = parseInt(docSnap.data().highScore, 10);
-                        // Always display the highest score (local or global)
-                        if (globalScore > highScore) {
-                             highScore = globalScore;
-                             localStorage.setItem('snakeHighScore', highScore);
-                        }
-                        document.getElementById('high-score').textContent = highScore;
-                    }
-                    // Clean up the listener if the game is somehow stopped (not strictly necessary here, but good practice)
-                    // return () => unsubscribe();
-                }, (error) => {
-                    console.error("Error loading global high score:", error);
-                });
-            }
         }
 
+        /**
+         * Updates the high score if the new score is higher.
+         * @param {number} newScore 
+         */
         function updateHighScore(newScore) {
             if (newScore > highScore) {
                 highScore = newScore;
                 document.getElementById('high-score').textContent = highScore;
                 localStorage.setItem('snakeHighScore', highScore);
-
-                if (db && isAuthReady) {
-                    const globalHighScoreRef = firebaseUtils.getPublicDocRef(db, 'global');
-                    
-                    // We need to fetch the existing global score or assume 0
-                    // In a simple model, we just update if local is higher, hoping Firestore rules handle concurrency.
-                    // For simplicity and avoiding complex transactions in this single file, we update if our new score beats the currently displayed high score.
-                    firebaseUtils.setDoc(globalHighScoreRef, { highScore: newScore, userId: userId, lastUpdated: new Date().toISOString() }, { merge: true })
-                        .catch(e => console.error("Error setting high score:", e));
-                }
             }
         }
 
@@ -330,6 +192,12 @@
          * Places the food item on the board.
          */
         function placeFood() {
+            // Remove old food element from DOM if it exists
+            const oldFoodElement = document.querySelector('.food');
+            if (oldFoodElement) {
+                oldFoodElement.remove();
+            }
+
             food = getRandomPosition();
             drawElement(food, 'food');
         }
@@ -451,6 +319,7 @@
          * @param {KeyboardEvent} event 
          */
         document.addEventListener('keydown', (event) => {
+            // Only allow input if the overlay is hidden (game is running)
             if (overlay.classList.contains('opacity-0')) {
                  setNextDirection(event.key);
             } else if (event.key === 'Enter') {
@@ -464,4 +333,68 @@
          */
         mobileControls.querySelectorAll('.control-button').forEach(button => {
             button.addEventListener('click', (event) => {
-                if (overlay.classList.c
+                // Only allow input if the overlay is hidden (game is running)
+                if (overlay.classList.contains('opacity-0')) {
+                    const directionKey = event.currentTarget.getAttribute('data-direction');
+                    setNextDirection(directionKey);
+                }
+            });
+        });
+
+        /**
+         * Central function to set the next desired direction, preventing 180 degree turns.
+         * @param {string} key 
+         */
+        function setNextDirection(key) {
+            let dirX = 0;
+            let dirY = 0;
+            
+            switch (key) {
+                case 'ArrowUp':
+                case 'up':
+                    dirY = -1;
+                    break;
+                case 'ArrowDown':
+                case 'down':
+                    dirY = 1;
+                    break;
+                case 'ArrowLeft':
+                case 'left':
+                    dirX = -1;
+                    break;
+                case 'ArrowRight':
+                case 'right':
+                    dirX = 1;
+                    break;
+                default:
+                    return;
+            }
+            
+            // Get the current direction the snake is heading
+            const currentDir = direction;
+
+            // Prevent turning 180 degrees (e.g., if currently moving right (x=1), don't allow moving left (x=-1))
+            if (dirX !== -currentDir.x && dirY !== -currentDir.y) {
+                // If the new direction is horizontal and the current direction is vertical (or vice versa), it's a valid turn.
+                if ((dirX !== 0 && currentDir.y !== 0) || (dirY !== 0 && currentDir.x !== 0)) {
+                    nextDirection = { x: dirX, y: dirY };
+                }
+                // If both are non-zero (diagonal), or both zero (no move), do nothing.
+                // If both are horizontal or both vertical (i.e., continuing straight), update direction.
+                else if (dirX !== 0 && currentDir.x !== 0) {
+                    nextDirection = { x: dirX, y: dirY };
+                } else if (dirY !== 0 && currentDir.y !== 0) {
+                    nextDirection = { x: dirX, y: dirY };
+                }
+            }
+        }
+
+        // Initial setup when the page loads
+        window.onload = function() {
+            setupGrid();
+            loadHighScore(); // Load the score immediately
+        };
+
+    </script>
+</body>
+</html>
